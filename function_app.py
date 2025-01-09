@@ -19,7 +19,7 @@ app = func.FunctionApp()
 
 @app.function_name(name="ImageProcessingTrigger")
 @app.blob_trigger(arg_name="myblob", 
-                 path="image/data",
+                 path="image/raw",
                  connection="AzureWebJobsStorage")
 def blob_trigger_function(myblob: func.InputStream):
     """
@@ -94,9 +94,9 @@ def blob_trigger_function(myblob: func.InputStream):
             "processed_at": datetime.utcnow().isoformat()
         }
 
-        # Save results to vision/data
+        # Save results to goog container
         output_blob_client = blob_service_client.get_blob_client(
-            container="vision", 
+            container="goog", 
             blob="data.json"
         )
 
@@ -104,11 +104,10 @@ def blob_trigger_function(myblob: func.InputStream):
         if output_blob_client.exists():
             timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
             archive_blob_client = blob_service_client.get_blob_client(
-                container="vision",
+                container="goog",
                 blob=f"archive/data_{timestamp}.json"
             )
             archive_blob_client.start_copy_from_url(output_blob_client.url)
-            output_blob_client.delete_blob()
             logging.info(f"Existing data archived as 'archive/data_{timestamp}.json'")
 
         # Upload new results
