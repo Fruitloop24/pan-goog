@@ -20,7 +20,8 @@ app = func.FunctionApp()
 @app.function_name(name="ImageProcessingTrigger")
 @app.blob_trigger(arg_name="myblob", 
                  path="image/data",
-                 connection="AzureWebJobsStorage")
+                 connection="AzureWebJobsStorage",
+                 auth_level=func.AuthLevel.ANONYMOUS)
 def blob_trigger_function(myblob: func.InputStream):
     """
     Azure Function triggered by blob storage uploads.
