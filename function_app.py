@@ -1,4 +1,6 @@
 import logging
+import base64
+from io import BytesIO
 from azure.storage.blob import BlobServiceClient
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -8,6 +10,7 @@ import os
 import json
 import requests
 from datetime import datetime
+from PIL import Image
 
 # Load environment variables
 load_dotenv()
@@ -44,15 +47,31 @@ def blob_trigger_function(myblob: func.InputStream):
         vision_service = build("vision", "v1", credentials=credentials)
 
         # Process the blob content
-        blob_content = myblob.read()
+        image_data = myblob.read()
+        
+        # Convert image to JPEG format
+        image = Image.open(BytesIO(image_data))
+        
+        # Convert to RGB if needed (in case of RGBA images)
+        if image.mode in ('RGBA', 'LA'):
+            background = Image.new('RGB', image.size, (255, 255, 255))
+            background.paste(image, mask=image.split()[-1])
+            image = background
+        
+        # Save as JPEG in memory
+        buffered = BytesIO()
+        image.save(buffered, format="JPEG", quality=95)
+        
+        # Encode image for Vision API
+        encoded_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
         # Vision API request
         request_body = {
             "requests": [{
-                "image": {"content": blob_content.decode('utf-8')},
+                "image": {"content": encoded_image},
                 "features": [
-                    {"type": "TEXT_DETECTION"}, 
-                    {"type": "LABEL_DETECTION"}
+                    {"type": "TEXT_DETECTION", "maxResults": 50}, 
+                    {"type": "LABEL_DETECTION", "maxResults": 50}
                 ],
             }]
         }
