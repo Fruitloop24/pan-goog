@@ -20,8 +20,7 @@ app = func.FunctionApp()
 @app.function_name(name="ImageProcessingTrigger")
 @app.blob_trigger(arg_name="myblob", 
                  path="image/data",
-                 connection="AzureWebJobsStorage",
-                 auth_level=func.AuthLevel.ANONYMOUS)
+                 connection="AzureWebJobsStorage")
 def blob_trigger_function(myblob: func.InputStream):
     """
     Azure Function triggered by blob storage uploads.
@@ -97,8 +96,8 @@ def blob_trigger_function(myblob: func.InputStream):
 
         # Save results to vision/data
         output_blob_client = blob_service_client.get_blob_client(
-            container="goog", 
-            blob="data"
+            container="vision", 
+            blob="data.json"
         )
 
         # Archive existing data if present
