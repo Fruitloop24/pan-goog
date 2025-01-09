@@ -34,9 +34,8 @@ vision_service = build("vision", "v1", credentials=credentials)
 app = func.FunctionApp()
 
 @app.function_name(name="goog")
-@app.route(route="goog")  # Add HTTP route
 @app.blob_trigger(arg_name="blob", 
-                 path="vision/data/{name}",  # Add name parameter
+                 path="vision/data/{name}",
                  connection="AzureWebJobsStorage")
 def goog_function(blob: func.InputStream):
     """
@@ -99,16 +98,10 @@ def goog_function(blob: func.InputStream):
         # Upload the new data to cat/categories
         output_blob_client.upload_blob(json.dumps(parsed_data, indent=2), overwrite=True)
         logging.info("Parsed data saved to Azure Blob successfully.")
-        return func.HttpResponse(
-            json.dumps({"status": "success", "message": "Image processed successfully"}),
-            mimetype="application/json",
-            status_code=200
-        )
+        logging.info("Image processed successfully")
+        return
 
     except Exception as e:
         logging.error(f"Error processing image with Google Vision: {e}")
-        return func.HttpResponse(
-            json.dumps({"status": "error", "message": str(e)}),
-            mimetype="application/json",
-            status_code=500
-        )
+        logging.error(f"Error processing image with Google Vision: {e}")
+        raise
