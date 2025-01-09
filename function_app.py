@@ -32,10 +32,18 @@ def blob_trigger_function(myblob: func.InputStream):
         google_credentials_file = os.getenv("GOOGLE_CREDENTIALS_FILE")
         google_scopes = [os.getenv("GOOGLE_SCOPES")]
 
+        # Validate environment variables
+        if not all([connection_string, google_credentials_file, google_scopes[0]]):
+            raise ValueError("Missing required environment variables")
+
         logging.info(f"Processing blob:\n"
                     f"Name: {myblob.name}\n"
                     f"Size: {myblob.length} bytes\n"
                     f"URI: {myblob.uri}")
+
+        # Validate blob content
+        if myblob.length == 0:
+            raise ValueError("Empty blob received")
 
         # Initialize Azure Blob Service Client
         blob_service_client = BlobServiceClient.from_connection_string(connection_string)
@@ -47,10 +55,16 @@ def blob_trigger_function(myblob: func.InputStream):
         vision_service = build("vision", "v1", credentials=credentials)
 
         # Process the blob content
+        logging.info("Reading blob content...")
         image_data = myblob.read()
         
         # Convert image to JPEG format
-        image = Image.open(BytesIO(image_data))
+        logging.info("Opening image with PIL...")
+        try:
+            image = Image.open(BytesIO(image_data))
+        except Exception as e:
+            logging.error(f"Failed to open image: {str(e)}")
+            raise
         
         # Convert to RGB if needed (in case of RGBA images)
         if image.mode in ('RGBA', 'LA'):
@@ -79,10 +93,18 @@ def blob_trigger_function(myblob: func.InputStream):
         # Call Vision API
         logging.info("Calling Google Vision API...")
         response = vision_service.images().annotate(body=request_body).execute()
+        
+        if not response.get("responses"):
+            logging.error("Empty response from Vision API")
+            raise ValueError("No response data from Vision API")
 
         # Parse response
-        text_annotations = response.get("responses", [{}])[0].get("textAnnotations", [])
-        label_annotations = response.get("responses", [{}])[0].get("labelAnnotations", [])
+        logging.info("Parsing Vision API response...")
+        api_response = response.get("responses", [{}])[0]
+        text_annotations = api_response.get("textAnnotations", [])
+        label_annotations = api_response.get("labelAnnotations", [])
+        
+        logging.info(f"Found {len(text_annotations)} text annotations and {len(label_annotations)} labels")
 
         parsed_data = {
             "text_annotations": [{"text": t["description"]} for t in text_annotations],
@@ -111,8 +133,9 @@ def blob_trigger_function(myblob: func.InputStream):
             logging.info(f"Existing data archived as 'archive/data_{timestamp}.json'")
 
         # Upload new results
+        logging.info(f"Uploading results to blob: {output_blob_client.blob_name}")
         output_blob_client.upload_blob(json.dumps(parsed_data, indent=2), overwrite=True)
-        logging.info("Vision API results saved successfully")
+        logging.info(f"Vision API results saved successfully to container 'goog' as '{output_blob_client.blob_name}'")
 
 
     except Exception as e:
