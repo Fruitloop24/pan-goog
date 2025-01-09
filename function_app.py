@@ -34,11 +34,10 @@ vision_service = build("vision", "v1", credentials=credentials)
 app = func.FunctionApp()
 
 @app.function_name(name="goog")
-@app.route(route="goog", auth_level=func.AuthLevel.ANONYMOUS)
 @app.blob_trigger(arg_name="blob", 
                  path="vision/data/{name}",
                  connection="AzureWebJobsStorage")
-def goog_function(req: func.HttpRequest, blob: func.InputStream) -> func.HttpResponse:
+def goog_function(blob: func.InputStream):
     logging.info('Python blob trigger function started')
     """
     Triggered when a blob is created or updated in the vision/data path.
@@ -101,11 +100,7 @@ def goog_function(req: func.HttpRequest, blob: func.InputStream) -> func.HttpRes
         output_blob_client.upload_blob(json.dumps(parsed_data, indent=2), overwrite=True)
         logging.info("Parsed data saved to Azure Blob successfully.")
         logging.info("Image processed successfully")
-        return func.HttpResponse(
-            json.dumps({"status": "success", "message": "Image processed successfully"}),
-            mimetype="application/json",
-            status_code=200
-        )
+        return
 
     except Exception as e:
         logging.error(f"Error processing image with Google Vision: {e}")
