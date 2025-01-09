@@ -27,14 +27,26 @@ def blob_trigger_function(myblob: func.InputStream):
     Processes images using Google Vision API and stores results.
     """
     try:
+        logging.info("Starting blob trigger function execution...")
+        
         # Environment variables
         connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
         google_credentials_file = os.getenv("GOOGLE_CREDENTIALS_FILE")
         google_scopes = [os.getenv("GOOGLE_SCOPES")]
 
+        # Log environment variable status
+        logging.info(f"Environment variables status:")
+        logging.info(f"AZURE_STORAGE_CONNECTION_STRING exists: {bool(connection_string)}")
+        logging.info(f"GOOGLE_CREDENTIALS_FILE exists: {bool(google_credentials_file)}")
+        logging.info(f"GOOGLE_SCOPES exists: {bool(google_scopes[0])}")
+
         # Validate environment variables
-        if not all([connection_string, google_credentials_file, google_scopes[0]]):
-            raise ValueError("Missing required environment variables")
+        if not connection_string:
+            raise ValueError("Missing AZURE_STORAGE_CONNECTION_STRING")
+        if not google_credentials_file:
+            raise ValueError("Missing GOOGLE_CREDENTIALS_FILE")
+        if not google_scopes[0]:
+            raise ValueError("Missing GOOGLE_SCOPES")
 
         logging.info(f"Processing blob:\n"
                     f"Name: {myblob.name}\n"
@@ -46,13 +58,25 @@ def blob_trigger_function(myblob: func.InputStream):
             raise ValueError("Empty blob received")
 
         # Initialize Azure Blob Service Client
-        blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+        logging.info("Initializing Azure Blob Service Client...")
+        try:
+            blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+            logging.info("Azure Blob Service Client initialized successfully")
+        except Exception as e:
+            logging.error(f"Failed to initialize Azure Blob Service Client: {str(e)}")
+            raise
 
         # Initialize Google Vision API
-        credentials = service_account.Credentials.from_service_account_file(
-            google_credentials_file, scopes=google_scopes
-        )
-        vision_service = build("vision", "v1", credentials=credentials)
+        logging.info(f"Initializing Google Vision API with credentials file: {google_credentials_file}")
+        try:
+            credentials = service_account.Credentials.from_service_account_file(
+                google_credentials_file, scopes=google_scopes
+            )
+            vision_service = build("vision", "v1", credentials=credentials)
+            logging.info("Google Vision API initialized successfully")
+        except Exception as e:
+            logging.error(f"Failed to initialize Google Vision API: {str(e)}")
+            raise
 
         # Process the blob content
         logging.info("Reading blob content...")
@@ -138,6 +162,12 @@ def blob_trigger_function(myblob: func.InputStream):
         logging.info(f"Vision API results saved successfully to container 'goog' as '{output_blob_client.blob_name}'")
 
 
+    except ValueError as ve:
+        logging.error(f"Validation error: {str(ve)}", exc_info=True)
+        raise
     except Exception as e:
-        logging.error(f"Error processing image: {str(e)}", exc_info=True)
+        logging.error(f"Unexpected error: {str(e)}", exc_info=True)
+        # Log the full error details
+        import traceback
+        logging.error(f"Full traceback:\n{traceback.format_exc()}")
         raise
