@@ -36,8 +36,10 @@ app = func.FunctionApp()
 @app.function_name(name="goog")
 @app.blob_trigger(arg_name="blob", 
                  path="vision/data/{name}",
-                 connection="AzureWebJobsStorage")
-def goog_function(blob: func.InputStream):
+                 connection="AzureWebJobsStorage") 
+@app.route(route="goog")  # Adding explicit route
+def goog_function(blob: func.InputStream) -> None:
+    logging.info('Python blob trigger function started')
     """
     Triggered when a blob is created or updated in the vision/data path.
     Downloads the blob content, processes it with Google Vision API, 
