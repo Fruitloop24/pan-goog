@@ -16,7 +16,7 @@ app = func.FunctionApp()
 
 @app.function_name(name="ImageProcessingTrigger")
 @app.blob_trigger(arg_name="myblob", 
-                 path="images/{name}",
+                 path="image/data",
                  connection="AzureWebJobsStorage")
 def blob_trigger_function(myblob: func.InputStream):
     """
@@ -28,8 +28,6 @@ def blob_trigger_function(myblob: func.InputStream):
         connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
         google_credentials_file = os.getenv("GOOGLE_CREDENTIALS_FILE")
         google_scopes = [os.getenv("GOOGLE_SCOPES")]
-        next_function_url = os.getenv("NEXT_FUNCTION_URL")
-        next_function_key = os.getenv("NEXT_FUNCTION_KEY")
 
         logging.info(f"Processing blob:\n"
                     f"Name: {myblob.name}\n"
@@ -45,18 +43,13 @@ def blob_trigger_function(myblob: func.InputStream):
         )
         vision_service = build("vision", "v1", credentials=credentials)
 
-        # Get the public URL for the uploaded image
-        input_container = "images"
-        input_blob_client = blob_service_client.get_blob_client(
-            container=input_container, 
-            blob=myblob.name
-        )
-        image_url = input_blob_client.url
+        # Process the blob content
+        blob_content = myblob.read()
 
         # Vision API request
         request_body = {
             "requests": [{
-                "image": {"source": {"imageUri": image_url}},
+                "image": {"content": blob_content.decode('utf-8')},
                 "features": [
                     {"type": "TEXT_DETECTION"}, 
                     {"type": "LABEL_DETECTION"}
@@ -84,7 +77,7 @@ def blob_trigger_function(myblob: func.InputStream):
 
         # Save results to vision/data
         output_blob_client = blob_service_client.get_blob_client(
-            container="vision", 
+            container="goog", 
             blob="data"
         )
 
@@ -103,19 +96,6 @@ def blob_trigger_function(myblob: func.InputStream):
         output_blob_client.upload_blob(json.dumps(parsed_data, indent=2), overwrite=True)
         logging.info("Vision API results saved successfully")
 
-        # Trigger next function if configured
-        if next_function_url:
-            try:
-                auth_url = (
-                    f"{next_function_url}?code={next_function_key}"
-                    if next_function_key
-                    else next_function_url
-                )
-                post_response = requests.post(auth_url, json=parsed_data)
-                post_response.raise_for_status()
-                logging.info(f"Next function triggered successfully: {post_response.status_code}")
-            except requests.RequestException as e:
-                logging.error(f"Failed to trigger next function: {e}")
 
     except Exception as e:
         logging.error(f"Error processing image: {str(e)}", exc_info=True)
