@@ -1,96 +1,122 @@
 import logging
+from azure.storage.blob import BlobServiceClient
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 import azure.functions as func
+from dotenv import load_dotenv
+import os
 import json
+import requests
 from datetime import datetime
-from typing import Optional
+
+# Load environment variables
+load_dotenv()
 
 app = func.FunctionApp()
 
-def validate_blob_content(content: bytes) -> tuple[bool, Optional[str]]:
-    """
-    Validates the blob content
-    Returns: (is_valid, error_message)
-    """
-    try:
-        if len(content) == 0:
-            return False, "Blob content is empty"
-        
-        # Try to decode and parse as JSON to validate format
-        json.loads(content.decode('utf-8'))
-        return True, None
-    except UnicodeDecodeError:
-        return False, "Content is not valid UTF-8"
-    except json.JSONDecodeError:
-        return False, "Content is not valid JSON"
-    except Exception as e:
-        return False, f"Validation error: {str(e)}"
-
-@app.function_name(name="BlobTrigger1")
+@app.function_name(name="ImageProcessingTrigger")
 @app.blob_trigger(arg_name="myblob", 
-                 path="samples-workitems/{name}",
+                 path="images/{name}",
                  connection="AzureWebJobsStorage")
 def blob_trigger_function(myblob: func.InputStream):
     """
     Azure Function triggered by blob storage uploads.
-    Processes JSON content and performs validation.
+    Processes images using Google Vision API and stores results.
     """
-    function_start_time = datetime.utcnow()
-    
     try:
-        logging.info(f"Python blob trigger function processing blob:\n"
+        # Environment variables
+        connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+        google_credentials_file = os.getenv("GOOGLE_CREDENTIALS_FILE")
+        google_scopes = [os.getenv("GOOGLE_SCOPES")]
+        next_function_url = os.getenv("NEXT_FUNCTION_URL")
+        next_function_key = os.getenv("NEXT_FUNCTION_KEY")
+
+        logging.info(f"Processing blob:\n"
                     f"Name: {myblob.name}\n"
                     f"Size: {myblob.length} bytes\n"
                     f"URI: {myblob.uri}")
 
-        # Read blob content
-        blob_content = myblob.read()
-        
-        # Validate content
-        is_valid, error_message = validate_blob_content(blob_content)
-        if not is_valid:
-            raise ValueError(f"Invalid blob content: {error_message}")
+        # Initialize Azure Blob Service Client
+        blob_service_client = BlobServiceClient.from_connection_string(connection_string)
 
-        # Process the content (assuming JSON)
-        content_json = json.loads(blob_content.decode('utf-8'))
-        
-        # Log processing details
-        logging.info(f"Successfully processed blob {myblob.name}")
-        logging.debug(f"Content keys: {list(content_json.keys())}")
-        
-        processing_time = (datetime.utcnow() - function_start_time).total_seconds()
-        
-        return func.HttpResponse(
-            json.dumps({
-                "status": "success",
-                "processed": True,
-                "blob_name": myblob.name,
-                "size": myblob.length,
-                "processing_time_seconds": processing_time,
-                "processed_at": datetime.utcnow().isoformat()
-            }),
-            mimetype="application/json",
-            status_code=200
+        # Initialize Google Vision API
+        credentials = service_account.Credentials.from_service_account_file(
+            google_credentials_file, scopes=google_scopes
         )
-        
-    except ValueError as ve:
-        logging.error(f"Validation error processing blob {myblob.name}: {str(ve)}")
-        return func.HttpResponse(
-            json.dumps({
-                "status": "error",
-                "error": str(ve),
-                "blob_name": myblob.name
-            }),
-            mimetype="application/json",
-            status_code=400
+        vision_service = build("vision", "v1", credentials=credentials)
+
+        # Get the public URL for the uploaded image
+        input_container = "images"
+        input_blob_client = blob_service_client.get_blob_client(
+            container=input_container, 
+            blob=myblob.name
         )
+        image_url = input_blob_client.url
+
+        # Vision API request
+        request_body = {
+            "requests": [{
+                "image": {"source": {"imageUri": image_url}},
+                "features": [
+                    {"type": "TEXT_DETECTION"}, 
+                    {"type": "LABEL_DETECTION"}
+                ],
+            }]
+        }
+
+        # Call Vision API
+        logging.info("Calling Google Vision API...")
+        response = vision_service.images().annotate(body=request_body).execute()
+
+        # Parse response
+        text_annotations = response.get("responses", [{}])[0].get("textAnnotations", [])
+        label_annotations = response.get("responses", [{}])[0].get("labelAnnotations", [])
+
+        parsed_data = {
+            "text_annotations": [{"text": t["description"]} for t in text_annotations],
+            "label_annotations": [
+                {"label": l["description"], "confidence": l["score"]}
+                for l in label_annotations
+            ],
+            "processed_image": myblob.name,
+            "processed_at": datetime.utcnow().isoformat()
+        }
+
+        # Save results to vision/data
+        output_blob_client = blob_service_client.get_blob_client(
+            container="vision", 
+            blob="data"
+        )
+
+        # Archive existing data if present
+        if output_blob_client.exists():
+            timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+            archive_blob_client = blob_service_client.get_blob_client(
+                container="vision",
+                blob=f"archive/data_{timestamp}.json"
+            )
+            archive_blob_client.start_copy_from_url(output_blob_client.url)
+            output_blob_client.delete_blob()
+            logging.info(f"Existing data archived as 'archive/data_{timestamp}.json'")
+
+        # Upload new results
+        output_blob_client.upload_blob(json.dumps(parsed_data, indent=2), overwrite=True)
+        logging.info("Vision API results saved successfully")
+
+        # Trigger next function if configured
+        if next_function_url:
+            try:
+                auth_url = (
+                    f"{next_function_url}?code={next_function_key}"
+                    if next_function_key
+                    else next_function_url
+                )
+                post_response = requests.post(auth_url, json=parsed_data)
+                post_response.raise_for_status()
+                logging.info(f"Next function triggered successfully: {post_response.status_code}")
+            except requests.RequestException as e:
+                logging.error(f"Failed to trigger next function: {e}")
+
     except Exception as e:
-        logging.error(f"Error processing blob {myblob.name}: {str(e)}", exc_info=True)
-        return func.HttpResponse(
-            json.dumps({
-                "status": "error",
-                "error": "Internal server error",
-                "blob_name": myblob.name
-            }),
-            mimetype="application/json",
-            status_code=500
-        )
+        logging.error(f"Error processing image: {str(e)}", exc_info=True)
+        raise
