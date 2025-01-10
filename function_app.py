@@ -37,19 +37,21 @@ def blob_trigger_function(myblob: func.InputStream):
         # Environment variables
         connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
         google_credentials_file = os.getenv("GOOGLE_CREDENTIALS_FILE")
+        google_credentials_b64 = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_B64")
         google_scopes = [os.getenv("GOOGLE_SCOPES")]
 
         # Log environment variable status
         logging.info(f"Environment variables status:")
         logging.info(f"AZURE_STORAGE_CONNECTION_STRING exists: {bool(connection_string)}")
         logging.info(f"GOOGLE_CREDENTIALS_FILE exists: {bool(google_credentials_file)}")
+        logging.info(f"GOOGLE_APPLICATION_CREDENTIALS_B64 exists: {bool(google_credentials_b64)}")
         logging.info(f"GOOGLE_SCOPES exists: {bool(google_scopes[0])}")
 
         # Validate environment variables
         if not connection_string:
             raise ValueError("Missing AZURE_STORAGE_CONNECTION_STRING")
-        if not google_credentials_file:
-            raise ValueError("Missing GOOGLE_CREDENTIALS_FILE")
+        if not (google_credentials_file or google_credentials_b64):
+            raise ValueError("Missing both GOOGLE_CREDENTIALS_FILE and GOOGLE_APPLICATION_CREDENTIALS_B64")
         if not google_scopes[0]:
             raise ValueError("Missing GOOGLE_SCOPES")
 
@@ -72,11 +74,25 @@ def blob_trigger_function(myblob: func.InputStream):
             raise
 
         # Initialize Google Vision API
-        logging.info(f"Initializing Google Vision API with credentials file: {google_credentials_file}")
+        logging.info("Initializing Google Vision API...")
         try:
-            credentials = service_account.Credentials.from_service_account_file(
-                google_credentials_file, scopes=google_scopes
-            )
+            # Try to get credentials from base64 environment variable first
+            credentials_b64 = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_B64")
+            if credentials_b64:
+                # Decode base64 credentials and create service account credentials
+                credentials_json = base64.b64decode(credentials_b64).decode('utf-8')
+                credentials_info = json.loads(credentials_json)
+                credentials = service_account.Credentials.from_service_account_info(
+                    credentials_info, scopes=google_scopes
+                )
+                logging.info("Successfully loaded credentials from base64 environment variable")
+            else:
+                # Fall back to file-based credentials (for local development)
+                credentials = service_account.Credentials.from_service_account_file(
+                    google_credentials_file, scopes=google_scopes
+                )
+                logging.info("Successfully loaded credentials from file")
+            
             vision_service = build("vision", "v1", credentials=credentials)
             logging.info("Google Vision API initialized successfully")
         except Exception as e:
@@ -169,7 +185,6 @@ def blob_trigger_function(myblob: func.InputStream):
         logging.info(f"Archiving results to process-archive container: {archive_blob_name}")
         archive_blob_client.upload_blob(json.dumps(parsed_data, indent=2))
         logging.info(f"Results archived to process-archive container as '{archive_blob_name}'")
-
 
     except ValueError as ve:
         logging.error(f"Validation error: {str(ve)}", exc_info=True)
