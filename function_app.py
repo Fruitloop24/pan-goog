@@ -161,7 +161,7 @@ def blob_trigger_function(myblob: func.InputStream):
             "processed_at": datetime.utcnow().isoformat()
         }
 
-        # Save results to process container
+        # Save latest result to process container
         process_blob_name = "latest_result.json"
         process_blob_client = blob_service_client.get_blob_client(
             container="process", 
@@ -173,7 +173,11 @@ def blob_trigger_function(myblob: func.InputStream):
         process_blob_client.upload_blob(json.dumps(parsed_data, indent=2), overwrite=True)
         logging.info(f"Results saved to process container as '{process_blob_name}'")
 
-        # Save timestamped copy to process-archive container
+        # Create a timestamped copy of the data for archiving
+        archive_data = parsed_data.copy()
+        archive_data["archived_at"] = datetime.utcnow().isoformat()
+        
+        # Save single timestamped copy to process-archive container
         timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
         archive_blob_name = f"result_{timestamp}.json"
         archive_blob_client = blob_service_client.get_blob_client(
@@ -181,9 +185,9 @@ def blob_trigger_function(myblob: func.InputStream):
             blob=archive_blob_name
         )
 
-        # Upload to process-archive container
+        # Upload single copy to process-archive container
         logging.info(f"Archiving results to process-archive container: {archive_blob_name}")
-        archive_blob_client.upload_blob(json.dumps(parsed_data, indent=2))
+        archive_blob_client.upload_blob(json.dumps(archive_data, indent=2))
         logging.info(f"Results archived to process-archive container as '{archive_blob_name}'")
 
     except ValueError as ve:
