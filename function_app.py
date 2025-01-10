@@ -173,22 +173,14 @@ def blob_trigger_function(myblob: func.InputStream):
         process_blob_client.upload_blob(json.dumps(parsed_data, indent=2), overwrite=True)
         logging.info(f"Results saved to process container as '{process_blob_name}'")
 
-        # Create a timestamped copy of the data for archiving
-        archive_data = parsed_data.copy()
-        archive_data["archived_at"] = datetime.utcnow().isoformat()
-        
-        # Save single timestamped copy to process-archive container
+        # Save one timestamped copy to process-archive container
         timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
         archive_blob_name = f"result_{timestamp}.json"
         archive_blob_client = blob_service_client.get_blob_client(
             container="process-archive", 
             blob=archive_blob_name
         )
-
-        # Upload single copy to process-archive container
-        logging.info(f"Archiving results to process-archive container: {archive_blob_name}")
-        archive_blob_client.upload_blob(json.dumps(archive_data, indent=2))
-        logging.info(f"Results archived to process-archive container as '{archive_blob_name}'")
+        archive_blob_client.upload_blob(json.dumps(parsed_data, indent=2))
 
     except ValueError as ve:
         logging.error(f"Validation error: {str(ve)}", exc_info=True)
