@@ -21,6 +21,10 @@ app = func.FunctionApp()
 @app.blob_trigger(arg_name="myblob", 
                  path="image/{name}",
                  connection="AzureWebJobsStorage")
+@app.retry(strategy="exponential_backoff", 
+          max_retry_count=3, 
+          minimum_interval="00:00:10", 
+          maximum_interval="00:01:00")
 def blob_trigger_function(myblob: func.InputStream):
     """
     Azure Function triggered by blob storage uploads.
