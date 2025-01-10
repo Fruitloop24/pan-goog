@@ -147,19 +147,8 @@ def blob_trigger_function(myblob: func.InputStream):
         # Save results to goog container
         output_blob_client = blob_service_client.get_blob_client(
             container="goog", 
-            blob="data.json"
+            blob=f"data_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.json"
         )
-
-        # Archive existing data if present
-        if output_blob_client.exists():
-            timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-            logging.info(f"Found existing data.json, archiving it...")
-            archive_blob_client = blob_service_client.get_blob_client(
-                container="goog",
-                blob=f"archive/data_{timestamp}.json"
-            )
-            archive_blob_client.start_copy_from_url(output_blob_client.url)
-            logging.info(f"Successfully archived existing data as 'archive/data_{timestamp}.json'")
 
         # Upload new results
         logging.info(f"Uploading results to blob: {output_blob_client.blob_name}")
