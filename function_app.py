@@ -145,16 +145,30 @@ def blob_trigger_function(myblob: func.InputStream):
             "processed_at": datetime.utcnow().isoformat()
         }
 
-        # Save results to goog container
-        output_blob_client = blob_service_client.get_blob_client(
-            container="goog", 
-            blob=f"data_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.json"
+        # Save results to process container
+        process_blob_name = "latest_result.json"
+        process_blob_client = blob_service_client.get_blob_client(
+            container="process", 
+            blob=process_blob_name
         )
 
-        # Upload new results
-        logging.info(f"Uploading results to blob: {output_blob_client.blob_name}")
-        output_blob_client.upload_blob(json.dumps(parsed_data, indent=2), overwrite=True)
-        logging.info(f"Vision API results saved successfully to container 'goog' as '{output_blob_client.blob_name}'")
+        # Upload to process container
+        logging.info(f"Uploading results to process container: {process_blob_name}")
+        process_blob_client.upload_blob(json.dumps(parsed_data, indent=2), overwrite=True)
+        logging.info(f"Results saved to process container as '{process_blob_name}'")
+
+        # Save timestamped copy to process-archive container
+        timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+        archive_blob_name = f"result_{timestamp}.json"
+        archive_blob_client = blob_service_client.get_blob_client(
+            container="process-archive", 
+            blob=archive_blob_name
+        )
+
+        # Upload to process-archive container
+        logging.info(f"Archiving results to process-archive container: {archive_blob_name}")
+        archive_blob_client.upload_blob(json.dumps(parsed_data, indent=2))
+        logging.info(f"Results archived to process-archive container as '{archive_blob_name}'")
 
 
     except ValueError as ve:
