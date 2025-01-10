@@ -18,6 +18,7 @@ load_dotenv()
 app = func.FunctionApp()
 
 @app.function_name(name="ImageProcessingTrigger")
+@app.function_name(name="pan-goog")
 @app.blob_trigger(arg_name="myblob", 
                  path="image/{name}",
                  connection="AzureWebJobsStorage")
