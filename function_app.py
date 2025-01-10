@@ -19,7 +19,7 @@ app = func.FunctionApp()
 
 @app.function_name(name="ImageProcessingTrigger")
 @app.blob_trigger(arg_name="myblob", 
-                 path="image/raw",
+                 path="image/{name}",
                  connection="AzureWebJobsStorage")
 def blob_trigger_function(myblob: func.InputStream):
     """
