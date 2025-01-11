@@ -181,6 +181,17 @@ def blob_trigger_function(myblob: func.InputStream):
         )
         archive_blob_client.upload_blob(json.dumps(parsed_data, indent=2))
 
+        # Trigger AI processing endpoint
+        aiopen_url = os.getenv("AIOPEN_PROCESS_URL")
+        if aiopen_url:
+            try:
+                logging.info(f"Triggering AI processing endpoint: {aiopen_url}")
+                response = requests.post(aiopen_url)
+                response.raise_for_status()
+                logging.info("Successfully triggered AI processing endpoint")
+            except Exception as e:
+                logging.error(f"Failed to trigger AI processing endpoint: {str(e)}")
+
     except ValueError as ve:
         logging.error(f"Validation error: {str(ve)}", exc_info=True)
         raise
